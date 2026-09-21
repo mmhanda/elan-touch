@@ -44,7 +44,7 @@ git clone https://github.com/mmhanda/elan-touch && cd elan-touch
 
 sudo elan-touch calibrate          # once per device - see "Why calibration" below
 sudo elan-touch enroll             # adaptive: stops by itself once you are recognised reliably
-sudo elan-touch verify             # live check with scores
+sudo elan-touch check              # guided test: your finger must pass, every other finger must not
 
 sudo elan-touch pam on                                # sudo, polkit, display manager (15 s window)
 systemctl --user enable --now elan-touch-unlock       # touch-to-unlock, see below
@@ -66,6 +66,7 @@ while the session is locked and asks logind to unlock it on a match, so a touch 
 sudo elan-touch status                      sensor, calibration, enrolled fingers
 sudo elan-touch calibrate [-n 40] [--force]
 sudo elan-touch enroll [--finger right-index-finger] [--extend]
+sudo elan-touch check                       guided accept/reject test - run before `pam on`
 sudo elan-touch verify [-n 10]
 sudo elan-touch delete [--finger NAME]
 sudo elan-touch pam [on|off]                fingerprint for sudo / polkit / login

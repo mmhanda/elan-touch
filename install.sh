@@ -36,7 +36,7 @@ elan-touch is installed and is now this machine's fprintd. Next:
 
   1. sudo elan-touch calibrate      once per device: measures the sensor's own pattern
   2. sudo elan-touch enroll         adaptive; it stops by itself when you are recognised reliably
-  3. sudo elan-touch verify         live check
+  3. sudo elan-touch check          guided test: your finger must pass, other fingers must not
   4. sudo elan-touch pam on          fingerprint for sudo, polkit and login (password still works)
   5. systemctl --user enable --now elan-touch-unlock       touch-to-unlock (desktops without
                                                            lock-screen fingerprint support)

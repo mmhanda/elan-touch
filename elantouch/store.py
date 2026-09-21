@@ -81,13 +81,18 @@ class Template:
         _atomic_save(self.path, views=np.stack(self.views).astype(np.float16),
                      hits=np.array(self.hits, np.int32), created=self.created)
 
+    @property
+    def full(self):
+        return len(self.views) >= MAX_VIEWS
+
     def add(self, lin):
-        """Append a view; once full, replace the view that has been useful least often."""
-        if len(self.views) >= MAX_VIEWS:
-            drop = int(np.argmin(self.hits))
-            del self.views[drop], self.hits[drop]
+        """Append a view. A full template refuses: silently replacing old views (what 0.2.0 did)
+        threw away the earliest - best verified - part of an enrollment."""
+        if self.full:
+            return False
         self.views.append(lin.astype(np.float32))
         self.hits.append(0)
+        return True
 
 
 def fingers(user):

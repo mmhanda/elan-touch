@@ -73,6 +73,9 @@ def cmd_enroll(args):
     tpl = store.Template.load(user, finger)
     if tpl.views and not args.extend:
         sys.exit(f"{finger} already has {len(tpl.views)} views - use --extend to add more, or delete it first")
+    if tpl.full:
+        sys.exit(f"{finger} is full ({len(tpl.views)} views). To start over: sudo elan-touch delete --finger {finger}")
+    print(f"Use ONE finger for this whole session - every touch becomes part of '{finger}'.")
     print(f"enrolling {finger} for {user}. This sensor sees only ~3.5 mm of skin, so it needs many touches.")
     print("Touch the way you will when logging in. Lift fully each time and let the position vary a little.")
     print(f"It finishes by itself once your touches are being recognised reliably (max {args.max} touches).\n")
@@ -101,6 +104,9 @@ def cmd_enroll(args):
                 continue
             if len(tpl.views) >= args.min and len(recent) == 10 and sum(recent) >= 8:
                 print("\nyour touches are now recognised reliably.")
+                break
+            if tpl.full:
+                print(f"\nthe template is full ({len(tpl.views)} views) - stopping.")
                 break
         tpl.save()
     print(f"saved {len(tpl.views)} views. Only enrollment adds views; run `enroll --extend` to widen coverage.")
@@ -135,6 +141,61 @@ def cmd_calibrate(args):
           f"{detail.var():.0%} of the fine-detail energy")
     print(f"after correction, unrelated touches correlate at {leftover:.3f} when overlaid (should be below ~0.10)")
     print("saved. Next: sudo elan-touch enroll")
+
+
+def cmd_check(args):
+    """The test that decides whether the fingerprint may be switched on: the enrolled finger must be
+    accepted, and no other finger may be - judged live, by the person who knows which is which."""
+    user = _user(args)
+    templates = [store.Template.load(user, f) for f in store.fingers(user)]
+    if not templates:
+        sys.exit(f"no fingers enrolled for {user}")
+
+    def series(eng, count):
+        scores = []
+        while len(scores) < count:
+            status, lin = eng.touch(timeout=90)
+            if status == Touch.TIMEOUT:
+                break
+            if status == Touch.UNSETTLED:
+                print("        hold still a moment longer - lift and try again")
+                eng.wait_lift()
+                continue
+            z = max(eng.score(t, lin)[0] for t in templates)
+            scores.append(z)
+            print(f"   {len(scores):>2}/{count}  {'MATCH   ' if z >= ACCEPT_Z else 'no match'}  z={z:4.1f}")
+            eng.wait_lift()
+        return scores
+
+    with Engine() as eng:
+        print(f"PART 1 of 2 - {args.own} touches with your ENROLLED finger only, the way you normally touch.")
+        input("   press ENTER when ready... ")
+        own = series(eng, args.own)
+        print(f"\nPART 2 of 2 - {args.other} touches with OTHER fingers. Never the enrolled one.")
+        print("   Change finger every few touches (both hands), and vary the position.")
+        input("   press ENTER when ready... ")
+        other = series(eng, args.other)
+
+    accepted = sum(z >= ACCEPT_Z for z in own)
+    wrong = [z for z in other if z >= ACCEPT_Z]
+    print("\n" + "=" * 66)
+    print(f" enrolled finger : accepted {accepted}/{len(own)} single touches")
+    print(f" other fingers   : accepted {len(wrong)}/{len(other)}"
+          + (f"   <-- scores {[round(z, 1) for z in wrong]}" if wrong else ""))
+    print(f" highest other-finger score: {max(other) if other else 0:.1f}  (threshold {ACCEPT_Z})")
+    if wrong:
+        print(" RESULT: FAIL - another finger was accepted. Keep the fingerprint OFF.")
+        print("         The template holds prints of more than one finger: delete it and enroll again,")
+        print("         one finger only:  sudo elan-touch delete && sudo elan-touch enroll")
+    elif not other:
+        print(" RESULT: incomplete - part 2 was not done.")
+    elif accepted * 3 < len(own):
+        print(" RESULT: other fingers are rejected, but your own finger is accepted too rarely.")
+        print("         Widen coverage:  sudo elan-touch enroll --extend")
+    else:
+        print(" RESULT: PASS - to switch the fingerprint on:")
+        print("         sudo elan-touch pam on && systemctl --user enable --now elan-touch-unlock")
+    print("=" * 66)
 
 
 PAM_PROFILES = ("elan-touch", "fprintd")     # ours (15 s window) first, the distribution's as fallback
@@ -187,6 +248,10 @@ def main():
     p.add_argument("--min", type=int, default=20)
     p.add_argument("--max", type=int, default=80)
     p.set_defaults(func=cmd_enroll)
+    p = sub.add_parser("check", help="guided accept/reject test - run it before switching the fingerprint on")
+    p.add_argument("--own", type=int, default=10)
+    p.add_argument("--other", type=int, default=20)
+    p.set_defaults(func=cmd_check)
     p = sub.add_parser("pam", help="use the fingerprint for sudo, polkit and login (Debian/Ubuntu)")
     p.add_argument("state", nargs="?", choices=("on", "off"))
     p.set_defaults(func=cmd_pam)
