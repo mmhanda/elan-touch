@@ -97,8 +97,11 @@ impostor spread).
 | + fixed-pattern removal | 4.47 | 60 % |
 | + sub-pixel refinement (Fourier zero-padding, ×4) | 4.64 | 68 % |
 
-With the published code and maps rebuilt by `calibrate`: 0 of 111 impostor attempts at z ≥ 4.39,
-half of the genuine leave-one-out touches at z ≥ 5.0 from a sparse 26-view template.
+With the published code and maps rebuilt by `calibrate`: no other-finger touch above z = 4.64, and
+half of the genuine leave-one-out touches at z ≥ 5.0 from a sparse 26-view template. (An earlier
+version of this document said "0 of 111 impostor attempts". Those 111 were not independent - the same
+33 touches were scored in both directions and against sub-templates - and zero accepts in 33
+independent tries cannot bound the false-accept rate below about 9 %. See section 8.)
 
 ## 6. Coverage
 
@@ -109,12 +112,45 @@ acceptance, and no matcher change moves it. Hence:
 
 * adaptive enrollment - keep going until 8 of the last 10 touches were recognised. On the
   development machine that took 12 more touches on top of the 25 seeded ones;
-* learning in use - a match with z ≥ 6 and < 80 % overlap is added as a view.
+* ~~learning in use~~ - removed in 0.2.0, see section 7. Widen coverage with `enroll --extend`.
 
-Live after enrollment: 11 of 15 single touches recognised, five views learned during those 15,
-~300 ms per decision with 40 views. The service allows three touches per authentication.
+Live after enrollment (0.1.0, threshold 5.0): 11 of 15 single touches recognised, ~300 ms per decision
+with 40 views.
 
-## 7. Open questions
+## 7. The 0.1.0 flaw: learning from verification
+
+Version 0.1.0 added any verification match with z ≥ 5.5-6 and < 80 % overlap to the template, to grow
+coverage over time. On the development machine the owner then tried fingers that were never
+enrolled, repeatedly, and some prompts succeeded.
+
+What the audit of that template showed:
+
+* The 25 views that came from the recorded enrollment session score z ≈ 24 against the recorded
+  touches of the enrolled finger and 2-4 against the others: genuine.
+* The last learned view scored **6.40 against a different finger** and 2.50 against the enrolled one:
+  it was that other finger's print. The touch that created it had been accepted because it matched
+  an *earlier learned view* at 6.34 - while scoring only 2.49 and 4.02 against the views that came
+  from enrollment.
+* Against the enrollment-only views, no other-finger touch exceeded 4.64, for any template size from
+  5 to 25 views. Template size was not the cause; a first suspicion that it was came from the
+  foreign views being present in the larger random subsets.
+
+So the mechanism was a feedback loop, not the matcher's separation: a threshold (5.0) with almost no
+margin over the worst wrong-finger score (4.64), unlimited placements, and a template that absorbed
+whatever it accepted. One accept enrolled the wrong finger; after that it matched its own print.
+
+Changes in 0.2.0:
+
+* verification never modifies the template; only enrollment (explicit, authenticated) adds views;
+* threshold 6.0 instead of 5.0 (worst wrong-finger score on a clean template: 4.64);
+* three placements per prompt instead of five, and after three failed prompts in a row the
+  fingerprint pauses for 60 s, doubling each time up to 15 min (the password is unaffected);
+* the documentation no longer states a false-accept count it cannot support.
+
+Cost: with a sparse 25-view template the enrolled finger is accepted on 40 % of single placements,
+about 78 % of prompts. That is what a fuller enrollment is for.
+
+## 8. Open questions
 
 * False accepts across people. Needs volunteers and a protocol; nothing here substitutes for it.
 * Mosaicking the views into one registered template would give near-total overlap for every probe

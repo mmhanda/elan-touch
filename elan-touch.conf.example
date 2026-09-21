@@ -2,12 +2,15 @@
 
 [matcher]
 # Decision threshold, in standard deviations of what unrelated fingers produce.
-# On the development unit the worst of 108 impostor attempts reached 4.64.
-accept_z = 5.0
-# Only matches at least this confident may add a new view to the template.
-learn_z = 5.5
+# On the development unit the worst impostor against a clean template reached 4.64.
+# Lower = more convenient and less safe. Do not go below 5.5.
+accept_z = 6.0
 
 [service]
 # Distinct finger placements tried per authentication before "no match" is reported.
 # A finger that stays put is not counted again; one that shifts a little is a new attempt.
-touches_per_verify = 5
+touches_per_verify = 3
+# After this many failed prompts in a row the fingerprint is paused (the password still works).
+# The pause doubles each time, up to 15 minutes, and resets on a successful match.
+lockout_after = 3
+lockout_seconds = 60

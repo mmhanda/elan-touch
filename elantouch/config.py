@@ -3,9 +3,10 @@ import configparser
 
 PATH = "/etc/elan-touch.conf"
 DEFAULTS = {
-    ("matcher", "accept_z"): 5.0,           # worst of 108 impostor attempts measured 4.64
-    ("matcher", "learn_z"): 5.5,            # only confident matches may extend a template
-    ("service", "touches_per_verify"): 5,   # distinct placements tried before "no match"
+    ("matcher", "accept_z"): 6.0,           # worst impostor measured on a clean template: 4.64
+    ("service", "touches_per_verify"): 3,   # distinct placements tried before "no match"
+    ("service", "lockout_after"): 3,        # consecutive failed prompts before a cooldown
+    ("service", "lockout_seconds"): 60,     # first cooldown; doubles each time, capped at 15 min
 }
 
 

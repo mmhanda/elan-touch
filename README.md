@@ -12,8 +12,8 @@ Rest your finger on the sensor, as on Windows. No swiping.
 | | stock libfprint `elan` driver | elan-touch |
 |---|---|---|
 | technique | slow swipe | touch |
-| genuine finger | score **0-3** (needs 24) | recognised on ~3 of 4 touches after enrollment, improving with use |
-| a different finger | score 0-3 - indistinguishable from the owner | **0 of 111** impostor attempts accepted |
+| genuine finger | score **0-3** (needs 24) | accepted on ~4 of 5 prompts (3 placements each) from a sparse 25-view template; better with fuller enrollment |
+| a different finger | score 0-3 - indistinguishable from the owner | highest score 4.64 against a threshold of 6.0 (33 recorded touches - a small sample, see below) |
 | calibration | aborts with `Calibration failed!` (8 of 10 attempts in one test) | waits the firmware out |
 | time per decision | - | ~300 ms |
 
@@ -23,10 +23,16 @@ method and caveats are in [docs/FINDINGS.md](docs/FINDINGS.md).
 ## Status and honest limits
 
 * **Tested on a single laptop.** The sensor ships in many Acer/ASUS models; reports are welcome.
-* **This is convenience-grade biometrics, not a security product.** The false-accept figure comes from
-  111 attempts using *one person's other fingers*. That shows the matcher separates fingers; it is
-  not a population-scale false-accept rate. A sensor that sees 3.5 mm of skin is inherently weaker
-  than a full-size reader. Your password keeps working everywhere and remains the real credential.
+* **This is convenience-grade biometrics, not a security product.** The wrong-finger figure comes from
+  33 recorded touches of *one person's other fingers*. That shows the matcher separates fingers; it
+  cannot establish a false-accept rate (zero accepts in 33 tries only bounds it below ~9 % at 95 %
+  confidence). A sensor that sees 3.5 mm of skin is inherently weaker than a full-size reader. Your
+  password keeps working everywhere and remains the real credential.
+* **Version 0.1.0 had a serious flaw - upgrade.** It added confident verification matches to the
+  template. One wrong-finger accept therefore enrolled that finger, and it was then accepted
+  routinely. Templates created or used with 0.1.0 should be deleted and re-enrolled. Since 0.2.0
+  only enrollment adds views, the threshold carries real margin, and repeated failures pause the
+  fingerprint. Details in [docs/FINDINGS.md](docs/FINDINGS.md), section 7.
 * Templates are small images of skin patches, stored root-only in `/var/lib/elan-touch/`.
 * The matcher is Python + NumPy + OpenCV. A C port (as a libfprint driver) is the long-term goal.
 
@@ -60,7 +66,7 @@ while the session is locked and asks logind to unlock it on a match, so a touch 
 sudo elan-touch status                      sensor, calibration, enrolled fingers
 sudo elan-touch calibrate [-n 40] [--force]
 sudo elan-touch enroll [--finger right-index-finger] [--extend]
-sudo elan-touch verify [-n 10] [--no-learn]
+sudo elan-touch verify [-n 10]
 sudo elan-touch delete [--finger NAME]
 sudo elan-touch pam [on|off]                fingerprint for sudo / polkit / login
 ```
@@ -95,8 +101,8 @@ sub-pixel refinement → express the result in standard deviations of the impost
 
 **Coverage is the real limit**, not the matcher: a 3.5 mm window lands on different skin each time
 (10 of 25 early touches overlapped none of the others). So enrollment is adaptive - it continues
-until 8 of your last 10 touches were recognised - and the template keeps learning: a confident match
-that shows new skin becomes a new view (up to 64).
+until 8 of your last 10 touches were recognised. Coverage only ever grows through enrollment
+(`enroll --extend`, up to 64 views) - never silently during verification, see the 0.1.0 flaw noted above.
 
 ### Why calibration
 

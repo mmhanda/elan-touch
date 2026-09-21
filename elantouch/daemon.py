@@ -27,7 +27,9 @@ FINGERS = ("left-thumb", "left-index-finger", "left-middle-finger", "left-ring-f
            "left-little-finger", "right-thumb", "right-index-finger", "right-middle-finger",
            "right-ring-finger", "right-little-finger")
 ENROLL_STAGES = 25
-TOUCHES_PER_VERIFY = config.load()["touches_per_verify"]
+_CFG = config.load()
+TOUCHES_PER_VERIFY = _CFG["touches_per_verify"]
+LOCKOUT_AFTER, LOCKOUT_SECONDS, LOCKOUT_MAX = _CFG["lockout_after"], _CFG["lockout_seconds"], 900
 
 log = logging.getLogger("elan-touch")
 
@@ -60,6 +62,9 @@ class Device(dbus.service.Object):
         self.worker = None
         self.cancel = threading.Event()
         self.templates = {}                    # (user, finger) -> Template, kept warm between uses
+        self.failed_prompts = 0                # consecutive prompts that ended in "no match"
+        self.lockouts = 0                      # cooldowns served since the last success
+        self.locked_until = 0.0
         self.props = {"name": "ELAN touch fingerprint sensor (elan-touch)",
                       "num-enroll-stages": dbus.Int32(ENROLL_STAGES), "scan-type": "press",
                       "finger-present": False, "finger-needed": False}
@@ -172,14 +177,26 @@ class Device(dbus.service.Object):
                 log.info("verify %s: z=%.1f overlap=%.0f%% (%s, %d views)", user, result[0],
                          100 * result[2], tpl.finger, len(tpl.views))
                 if result[0] >= ACCEPT_Z:
-                    eng.learn(tpl, lin, result)
+                    self.failed_prompts = self.lockouts = 0
                     GLib.idle_add(self.VerifyStatus, "verify-match", True)
                     return
                 misses += 1
                 if misses >= TOUCHES_PER_VERIFY:
+                    self._prompt_failed()
                     GLib.idle_add(self.VerifyStatus, "verify-no-match", True)
                     return
                 GLib.idle_add(self.VerifyStatus, "verify-retry-scan", False)
+
+    def _prompt_failed(self):
+        """A matcher with a small but non-zero false-accept rate loses to unlimited retries, so
+        repeated failures buy a cooldown that doubles each time. The password path is unaffected."""
+        self.failed_prompts += 1
+        if self.failed_prompts >= LOCKOUT_AFTER:
+            pause = min(LOCKOUT_SECONDS * 2 ** self.lockouts, LOCKOUT_MAX)
+            self.locked_until = time.time() + pause
+            self.lockouts += 1
+            self.failed_prompts = 0
+            log.warning("too many failed fingerprint prompts - fingerprint paused for %d s", pause)
 
     def _enroll(self, user, finger, cancel):
         tpl = store.Template(user, finger)
@@ -248,6 +265,9 @@ class Device(dbus.service.Object):
                 raise FprintError("InvalidFingername", "Invalid finger name")
             if not self._templates(self.user):
                 raise FprintError("NoEnrolledPrints", f"No fingers enrolled for {self.user}")
+            if time.time() < self.locked_until:
+                raise FprintError("Internal", "fingerprint paused after repeated failures - "
+                                  f"use your password ({int(self.locked_until - time.time())} s left)")
         except FprintError as exc:
             return error(exc)
         user = self.user

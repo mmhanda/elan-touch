@@ -62,9 +62,8 @@ def cmd_verify(args):
             tries += 1
             matched = z >= ACCEPT_Z
             ok += matched
-            grew = eng.learn(tpl, lin, best[0]) if matched and not args.no_learn else False
             print(f"   {tries:>2}. {'MATCH   ' if matched else 'no match'}  z={z:4.1f}  overlap={overlap:4.0%}  "
-                  f"{ms:4.0f} ms  [{tpl.finger}, {len(tpl.views)} views]{'  +learned' if grew else ''}")
+                  f"{ms:4.0f} ms  [{tpl.finger}, {len(tpl.views)} views]")
             eng.wait_lift()
     print(f"\nrecognised {ok}/{tries} touches ({ok / max(tries, 1):.0%})")
 
@@ -104,7 +103,7 @@ def cmd_enroll(args):
                 print("\nyour touches are now recognised reliably.")
                 break
         tpl.save()
-    print(f"saved {len(tpl.views)} views. It keeps learning from successful logins.")
+    print(f"saved {len(tpl.views)} views. Only enrollment adds views; run `enroll --extend` to widen coverage.")
 
 
 def cmd_calibrate(args):
@@ -181,7 +180,6 @@ def main():
     sub.add_parser("status").set_defaults(func=cmd_status)
     p = sub.add_parser("verify", help="live recognition test")
     p.add_argument("-n", "--count", type=int, default=10)
-    p.add_argument("--no-learn", action="store_true")
     p.set_defaults(func=cmd_verify)
     p = sub.add_parser("enroll", help="enroll a finger (adaptive)")
     p.add_argument("--finger", default=DEFAULT_FINGER)

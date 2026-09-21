@@ -1,4 +1,4 @@
-"""Capture a touch, decide identity, enroll, and keep learning."""
+"""Capture a touch and decide identity. Views are only ever added by enrollment."""
 import threading
 import time
 
@@ -10,8 +10,6 @@ from .store import Calibration, Template
 
 _CFG = config.load()
 ACCEPT_Z = _CFG["accept_z"]
-LEARN_Z = _CFG["learn_z"]
-LEARN_MAX_OVERLAP = 0.80
 SETTLE_R = 0.97
 MAX_FRAMES = 45         # ~1.3 s of holding still before giving up on a touch
 
@@ -102,15 +100,7 @@ class Engine:
             views = template._cache = [M.View(v) for v in template.views]
         return M.match(views, M.Probe(lin))
 
-    def learn(self, template, lin, result):
-        """Confident matches that show new skin extend the template - this is how a 3.5 mm sensor
-        becomes reliable over time."""
-        z, _, overlap, vi, _ = result
-        if vi >= 0:
-            template.hits[vi] += 1
-        grew = z >= LEARN_Z and overlap < LEARN_MAX_OVERLAP
-        if grew:
-            template.add(lin)
-            template._cache = None
-        template.save()
-        return grew
+    # There is deliberately no "learn from a successful verification" here. An earlier version
+    # added confident matches to the template; a single false accept then enrolled the wrong
+    # finger, which made the next false accept easier, and so on (see docs/FINDINGS.md section 8).
+    # Only enrollment - explicit, authenticated, with the owner present - may add views.
