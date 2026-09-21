@@ -1,6 +1,7 @@
 """elan-touch command line."""
 import argparse
 import os
+import subprocess
 import sys
 import time
 
@@ -96,6 +97,9 @@ def cmd_enroll(args):
             print(f"   {n:>3}. {'recognised (z=%4.1f)' % z if known else 'new area          '}  "
                   f"views={len(tpl.views):>2}  last 10 recognised: {sum(recent)}/{len(recent)}")
             eng.wait_lift()
+            # topping up an existing finger is about variety: insist on a real session
+            if args.extend and n < 20:
+                continue
             if len(tpl.views) >= args.min and len(recent) == 10 and sum(recent) >= 8:
                 print("\nyour touches are now recognised reliably.")
                 break
@@ -134,6 +138,37 @@ def cmd_calibrate(args):
     print("saved. Next: sudo elan-touch enroll")
 
 
+PAM_PROFILES = ("elan-touch", "fprintd")     # ours (15 s window) first, the distribution's as fallback
+
+
+def pam_enabled():
+    try:
+        with open("/etc/pam.d/common-auth") as f:
+            return any("pam_fprintd" in line and not line.lstrip().startswith("#") for line in f)
+    except OSError:
+        return False
+
+
+def cmd_pam(args):
+    """pam-auth-update has two traps when scripted: without DEBIAN_FRONTEND=noninteractive it hangs
+    forever when there is no terminal, and older versions have no --disable (they ignore it and
+    exit 0) - --remove is what works everywhere."""
+    if args.state is not None:
+        env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
+
+        def update(*flags):
+            subprocess.run(["pam-auth-update", *flags], env=env, stdin=subprocess.DEVNULL,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        for profile in PAM_PROFILES:
+            update("--remove", profile)
+        if args.state == "on":
+            available = [p for p in PAM_PROFILES if os.path.exists("/usr/share/pam-configs/" + p)]
+            if not available:
+                sys.exit("no fingerprint PAM profile found - is libpam-fprintd installed?")
+            update("--enable", available[0])
+    print("fingerprint for sudo / polkit / login:", "on" if pam_enabled() else "off")
+
+
 def cmd_delete(args):
     store.delete(_user(args), args.finger)
     print("deleted")
@@ -154,6 +189,9 @@ def main():
     p.add_argument("--min", type=int, default=20)
     p.add_argument("--max", type=int, default=80)
     p.set_defaults(func=cmd_enroll)
+    p = sub.add_parser("pam", help="use the fingerprint for sudo, polkit and login (Debian/Ubuntu)")
+    p.add_argument("state", nargs="?", choices=("on", "off"))
+    p.set_defaults(func=cmd_pam)
     p = sub.add_parser("delete")
     p.add_argument("--finger")
     p.set_defaults(func=cmd_delete)

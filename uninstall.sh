@@ -2,7 +2,10 @@
 # Restore the stock fprintd. Pass --purge to also delete calibration and enrolled fingers.
 set -euo pipefail
 [ "$(id -u)" = 0 ] || exec sudo "$0" "$@"
-pam-auth-update --disable fprintd 2>/dev/null || true
+for profile in elan-touch fprintd; do
+    DEBIAN_FRONTEND=noninteractive pam-auth-update --remove "$profile" </dev/null >/dev/null 2>&1 || true
+done
+rm -f /usr/share/pam-configs/elan-touch
 systemctl stop fprintd 2>/dev/null || true
 rm -f /etc/systemd/system/fprintd.service /etc/systemd/user/elan-touch-unlock.service
 rm -f /etc/systemd/system/multi-user.target.wants/fprintd.service

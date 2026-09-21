@@ -5,6 +5,7 @@ engine, so pam_fprintd, fprintd-enroll/verify/list/delete and desktop settings w
 import logging
 import pwd
 import threading
+import time
 
 import dbus
 import dbus.mainloop.glib
@@ -149,7 +150,7 @@ class Device(dbus.service.Object):
 
     def _verify(self, user, cancel):
         templates = self._templates(user)
-        misses = 0
+        misses, last = 0, None
         with Engine() as eng:
             while not cancel.is_set():
                 status, lin = self._touch(eng, cancel)
@@ -158,7 +159,15 @@ class Device(dbus.service.Object):
                 if status != Touch.OK:
                     GLib.idle_add(self.VerifyStatus, "verify-retry-scan", False)
                     eng.wait_lift(cancel)
+                    GLib.idle_add(self._set, "finger-present", False)
+                    last = None
                     continue
+                # No need to lift between attempts: a resting finger that shifts a little is a new
+                # attempt, one that has not moved is not (and must not use up a try).
+                if last is not None and eng.same_placement(last, lin):
+                    time.sleep(0.05)
+                    continue
+                last = lin
                 result, tpl = max(((eng.score(t, lin), t) for t in templates), key=lambda x: x[0][0])
                 log.info("verify %s: z=%.1f overlap=%.0f%% (%s, %d views)", user, result[0],
                          100 * result[2], tpl.finger, len(tpl.views))
@@ -171,7 +180,6 @@ class Device(dbus.service.Object):
                     GLib.idle_add(self.VerifyStatus, "verify-no-match", True)
                     return
                 GLib.idle_add(self.VerifyStatus, "verify-retry-scan", False)
-                eng.wait_lift(cancel)
 
     def _enroll(self, user, finger, cancel):
         tpl = store.Template(user, finger)
@@ -193,6 +201,7 @@ class Device(dbus.service.Object):
                 if stage < ENROLL_STAGES:
                     GLib.idle_add(self.EnrollStatus, "enroll-stage-passed", False)
                     eng.wait_lift(cancel)
+                    GLib.idle_add(self._set, "finger-present", False)
         if stage >= ENROLL_STAGES:
             tpl.save()
             self.templates[(user, finger)] = tpl

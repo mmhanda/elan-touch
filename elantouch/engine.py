@@ -75,11 +75,15 @@ class Engine:
             prev = rb
             if not self.sensor.finger(200):
                 break
-        if on_finger:
-            on_finger(False)
         if len(run) < 3:
             return Touch.UNSETTLED, None
         return Touch.OK, np.mean(run, axis=0).astype(np.float32)
+
+    @staticmethod
+    def same_placement(a, b):
+        """True if two conditioned touches show the same skin in the same place - a finger that
+        simply stayed where it was tells the matcher nothing new."""
+        return M._cc(M.ridge_band(a), M.ridge_band(b)) >= 0.90
 
     def wait_lift(self, cancel=None, limit=10.0):
         t0 = time.time()

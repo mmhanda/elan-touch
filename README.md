@@ -40,7 +40,7 @@ sudo elan-touch calibrate          # once per device - see "Why calibration" bel
 sudo elan-touch enroll             # adaptive: stops by itself once you are recognised reliably
 sudo elan-touch verify             # live check with scores
 
-sudo pam-auth-update --enable fprintd                  # sudo, polkit, display manager
+sudo elan-touch pam on                                # sudo, polkit, display manager (15 s window)
 systemctl --user enable --now elan-touch-unlock       # touch-to-unlock, see below
 ```
 
@@ -62,7 +62,12 @@ sudo elan-touch calibrate [-n 40] [--force]
 sudo elan-touch enroll [--finger right-index-finger] [--extend]
 sudo elan-touch verify [-n 10] [--no-learn]
 sudo elan-touch delete [--finger NAME]
+sudo elan-touch pam [on|off]                fingerprint for sudo / polkit / login
 ```
+
+During a prompt you do not need to lift your finger between attempts: if the first placement is
+not recognised, shift it slightly - each new placement is a fresh attempt (five per prompt), while a
+finger that has not moved is not counted again.
 
 The standard tools work too: `fprintd-list`, `fprintd-verify`, `fprintd-enroll`, `fprintd-delete`.
 Thresholds live in `/etc/elan-touch.conf` ([example](elan-touch.conf.example)).
