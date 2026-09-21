@@ -1,0 +1,17 @@
+# elan-touch: replaces the stock fprintd for this machine's ELAN 04f3:0c4f sensor.
+# Delete this file (and `systemctl daemon-reload`) to get the stock fprintd back.
+[Unit]
+Description=elan-touch fingerprint service (fprintd-compatible)
+Documentation=https://github.com/mmhanda/elan-touch
+
+[Service]
+Type=dbus
+BusName=net.reactivated.Fprint
+Environment=PYTHONPATH=/usr/local/lib/elan-touch
+Environment=PYTHONWARNINGS=ignore
+ExecStart=/usr/bin/python3 -m elantouch.daemon
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

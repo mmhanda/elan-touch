@@ -1,0 +1,12 @@
+# /etc/elan-touch.conf - every key is optional; these are the defaults.
+
+[matcher]
+# Decision threshold, in standard deviations of what unrelated fingers produce.
+# On the development unit the worst of 108 impostor attempts reached 4.64.
+accept_z = 5.0
+# Only matches at least this confident may add a new view to the template.
+learn_z = 6.0
+
+[service]
+# Touches allowed per authentication before "no match" is reported.
+touches_per_verify = 3

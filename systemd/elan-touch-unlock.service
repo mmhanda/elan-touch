@@ -1,0 +1,13 @@
+[Unit]
+Description=elan-touch: unlock the session by touching the fingerprint sensor
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Environment=PYTHONPATH=/usr/local/lib/elan-touch
+ExecStart=/usr/bin/python3 -m elantouch.unlock
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=graphical-session.target

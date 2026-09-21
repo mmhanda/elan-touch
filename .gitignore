@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+# never commit biometric data or per-device calibration
+*.npy
+*.npz
+dataset/
