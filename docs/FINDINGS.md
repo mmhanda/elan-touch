@@ -150,6 +150,39 @@ Changes in 0.2.0:
 Cost: with a sparse 25-view template the enrolled finger is accepted on 40 % of single placements,
 about 78 % of prompts. That is what a fuller enrollment is for.
 
+## 9. Locking the user out of the login screen (0.2.2)
+
+`elan-touch pam on` used `pam-auth-update`, which writes `pam_fprintd` into
+`/etc/pam.d/common-auth`. That file is included by the display manager, so every graphical login
+ran the fingerprint stack. After a reboot the login screen accepted no password at all:
+
+```
+02:17:54  sddm-helper: [PAM] Authenticating...
+   (3 minutes 18 seconds of nothing)
+02:21:12  sddm-helper crashed (exit code 15)
+```
+
+`VerifyStart` only sent its D-Bus reply after an asynchronous polkit `CheckAuthorization` came
+back, with a 300-second client timeout. At the greeter there is no active session to authorize
+against, polkit did not answer, so `VerifyStart` never returned and `pam_fprintd` blocked the whole
+auth stack. `pam_fprintd`'s own `timeout=` does not help: it bounds the wait for a finger *after*
+verification has started, not the call that starts it.
+
+The owner recovered by deleting the account password and enabling autologin - a working machine
+with no authentication at all.
+
+Two changes, either of which alone would have prevented it:
+
+* `_polkit` now answers within 2 s no matter what, falling back to a local decision (root, or the
+  user who claimed the device). A client blocked in `VerifyStart` cannot fall back to a password,
+  so that method must never wait on anything unbounded.
+* `pam on` no longer touches `common-auth`. It writes
+  `auth [success=done default=ignore] pam_fprintd.so` into `/etc/pam.d/sudo` and
+  `/etc/pam.d/polkit-1` only, between removable markers, after copying the original aside.
+  `default=ignore` means a missing or broken module is skipped and the password prompt follows.
+  The display manager and `login` never reference the fingerprint, so no fingerprint fault can
+  cost anyone access to their machine.
+
 ## 8. Open questions
 
 * False accepts across people. Needs volunteers and a protocol; nothing here substitutes for it.

@@ -28,6 +28,11 @@ method and caveats are in [docs/FINDINGS.md](docs/FINDINGS.md).
   cannot establish a false-accept rate (zero accepts in 33 tries only bounds it below ~9 % at 95 %
   confidence). A sensor that sees 3.5 mm of skin is inherently weaker than a full-size reader. Your
   password keeps working everywhere and remains the real credential.
+* **Never put this in `/etc/pam.d/common-auth`.** `pam on` writes only to `/etc/pam.d/sudo` and
+  `/etc/pam.d/polkit-1`. `common-auth` is included by the display manager and by `login`, and a
+  fingerprint service that stalls there freezes the login screen with no way in - it happened, see
+  [docs/FINDINGS.md](docs/FINDINGS.md) section 9. Scoped as shipped, the worst case is a slow
+  `sudo` that Ctrl-C recovers from, while the desktop and the login screen are untouched.
 * **Version 0.1.0 had a serious flaw - upgrade.** It added confident verification matches to the
   template. One wrong-finger accept therefore enrolled that finger, and it was then accepted
   routinely. Templates created or used with 0.1.0 should be deleted and re-enrolled. Since 0.2.0
@@ -46,7 +51,7 @@ sudo elan-touch calibrate          # once per device - see "Why calibration" bel
 sudo elan-touch enroll             # adaptive: stops by itself once you are recognised reliably
 sudo elan-touch check              # guided test: your finger must pass, every other finger must not
 
-sudo elan-touch pam on                                # sudo, polkit, display manager (15 s window)
+sudo elan-touch pam on                                # sudo + system password dialogs only
 systemctl --user enable --now elan-touch-unlock       # touch-to-unlock, see below
 ```
 
@@ -69,7 +74,7 @@ sudo elan-touch enroll [--finger right-index-finger] [--extend]
 sudo elan-touch check                       guided accept/reject test - run before `pam on`
 sudo elan-touch verify [-n 10]
 sudo elan-touch delete [--finger NAME]
-sudo elan-touch pam [on|off]                fingerprint for sudo / polkit / login
+sudo elan-touch pam [on|off]                fingerprint for sudo / system password dialogs
 ```
 
 During a prompt you do not need to lift your finger between attempts: if the first placement is

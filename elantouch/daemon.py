@@ -83,21 +83,47 @@ class Device(dbus.service.Object):
         uid = self.bus.get_unix_user(sender)
         return uid, pwd.getpwuid(uid).pw_name
 
+    # A client blocked in VerifyStart is a client that cannot fall back to a password.
+    # pam_fprintd is one such client, and it is used by sudo, so this method must always
+    # answer quickly, whatever polkit does.
+    POLKIT_TIMEOUT = 2.0
+
     def _polkit(self, sender, action, granted, denied):
-        """Ask polkit the same questions fprintd asks. Falls back to 'same user or root'."""
-        def fallback(_exc=None):
+        """Ask polkit what fprintd asks, but never wait on it: polkit has no authority to
+        consult before a session is active, and an unanswered call used to hang the caller
+        (it froze the display manager's login, see docs/FINDINGS.md section 9). On timeout
+        or error, decide locally - root or the claiming user is allowed."""
+        settled = []
+
+        def settle(allow):
+            if settled:
+                return False                      # first answer wins; later ones are noise
+            settled.append(allow)
+            (granted if allow else denied)()
+            return False
+
+        def locally(_exc=None):
             uid, name = self._caller(sender)
-            (granted if uid == 0 or name == self.user else denied)()
+            settle(uid == 0 or name == self.user)
+
+        def on_timeout():
+            if not settled:
+                log.info("polkit did not answer in %.0f s - deciding locally", self.POLKIT_TIMEOUT)
+                locally()
+            return False
+
+        GLib.timeout_add(int(self.POLKIT_TIMEOUT * 1000), on_timeout)
         try:
             authority = dbus.Interface(self.bus.get_object("org.freedesktop.PolicyKit1",
                                                            "/org/freedesktop/PolicyKit1/Authority"),
                                        "org.freedesktop.PolicyKit1.Authority")
             subject = ("system-bus-name", {"name": dbus.String(sender, variant_level=1)})
             authority.CheckAuthorization(subject, action, {}, dbus.UInt32(1), "",
-                                         reply_handler=lambda r: (granted if r[0] else denied)(),
-                                         error_handler=fallback, timeout=300)
+                                         reply_handler=lambda r: settle(bool(r[0])),
+                                         error_handler=locally,
+                                         timeout=self.POLKIT_TIMEOUT)
         except dbus.DBusException:
-            fallback()
+            locally()
 
     def _set(self, name, value):
         if self.props[name] != value:

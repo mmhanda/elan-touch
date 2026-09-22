@@ -24,8 +24,6 @@ install -d -m 0700 /var/lib/elan-touch /var/lib/elan-touch/sensor /var/lib/elan-
 # Same unit name as the stock fprintd, in /etc: it takes precedence without replacing any package.
 install -m 0644 systemd/fprintd.service /etc/systemd/system/fprintd.service
 install -m 0644 systemd/elan-touch-unlock.service /etc/systemd/user/elan-touch-unlock.service
-# Same pam_fprintd, but a 15 s window instead of 10: reaching for the sensor takes a few seconds.
-[ -d /usr/share/pam-configs ] && install -m 0644 systemd/elan-touch.pam-config /usr/share/pam-configs/elan-touch
 systemctl daemon-reload
 systemctl enable fprintd >/dev/null 2>&1 || true
 systemctl restart fprintd

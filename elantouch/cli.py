@@ -1,6 +1,7 @@
 """elan-touch command line."""
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -198,35 +199,84 @@ def cmd_check(args):
     print("=" * 66)
 
 
-PAM_PROFILES = ("elan-touch", "fprintd")     # ours (15 s window) first, the distribution's as fallback
+# The fingerprint is wired into sudo and the polkit agent ONLY - never into
+# /etc/pam.d/common-auth. common-auth is included by the display manager and by
+# login, so a fingerprint service that stalls there freezes the machine's login
+# screen and locks the user out. Scoped this way the worst case is a slow sudo,
+# which Ctrl-C recovers from while the desktop keeps working.
+PAM_TARGETS = ("/etc/pam.d/sudo", "/etc/pam.d/polkit-1")
+PAM_BEGIN = "# elan-touch begin (remove with: elan-touch pam off)\n"
+PAM_END = "# elan-touch end\n"
+# success=done ends the auth stack successfully; anything else - including the
+# module being absent or broken - is ignored and the password prompt follows.
+PAM_LINE = "auth\t[success=done default=ignore]\tpam_fprintd.so max-tries=1 timeout=10\n"
+PAM_STALE = "/usr/share/pam-configs/elan-touch"
+
+
+def _pam_strip(text):
+    out, skip = [], False
+    for line in text.splitlines(keepends=True):
+        if line == PAM_BEGIN:
+            skip = True
+        elif line == PAM_END:
+            skip = False
+        elif not skip:
+            out.append(line)
+    return "".join(out)
 
 
 def pam_enabled():
-    try:
-        with open("/etc/pam.d/common-auth") as f:
-            return any("pam_fprintd" in line and not line.lstrip().startswith("#") for line in f)
-    except OSError:
-        return False
+    for path in PAM_TARGETS:
+        try:
+            if PAM_BEGIN in open(path).read():
+                return True
+        except OSError:
+            pass
+    return False
+
+
+def _pam_write(path, text):
+    """Replace a PAM file atomically: a half-written /etc/pam.d/sudo is unusable."""
+    tmp = path + ".elan-touch.tmp"
+    with open(tmp, "w") as f:
+        f.write(text)
+        f.flush()
+        os.fsync(f.fileno())
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, path)
 
 
 def cmd_pam(args):
-    """pam-auth-update has two traps when scripted: without DEBIAN_FRONTEND=noninteractive it hangs
-    forever when there is no terminal, and older versions have no --disable (they ignore it and
-    exit 0) - --remove is what works everywhere."""
     if args.state is not None:
+        # Any earlier install put pam_fprintd into common-auth via pam-auth-update.
+        # Always take it back out: that is the configuration that can freeze login.
         env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
+        for profile in ("elan-touch", "fprintd"):
+            subprocess.run(["pam-auth-update", "--remove", profile], env=env,
+                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, check=False)
+        if os.path.exists(PAM_STALE):
+            os.remove(PAM_STALE)
 
-        def update(*flags):
-            subprocess.run(["pam-auth-update", *flags], env=env, stdin=subprocess.DEVNULL,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-        for profile in PAM_PROFILES:
-            update("--remove", profile)
-        if args.state == "on":
-            available = [p for p in PAM_PROFILES if os.path.exists("/usr/share/pam-configs/" + p)]
-            if not available:
-                sys.exit("no fingerprint PAM profile found - is libpam-fprintd installed?")
-            update("--enable", available[0])
-    print("fingerprint for sudo / polkit / login:", "on" if pam_enabled() else "off")
+        for path in PAM_TARGETS:
+            try:
+                text = _pam_strip(open(path).read())
+            except OSError:
+                continue
+            if args.state == "on":
+                anchor = "@include common-auth"
+                if anchor not in text:
+                    print(f"{path}: no '{anchor}' line, skipped", file=sys.stderr)
+                    continue
+                text = text.replace(anchor, PAM_BEGIN + PAM_LINE + PAM_END + anchor, 1)
+            if not os.path.exists(path + ".elan-touch.orig"):
+                shutil.copy2(path, path + ".elan-touch.orig")
+            _pam_write(path, text)
+
+    print("fingerprint for sudo and system password dialogs:",
+          "on" if pam_enabled() else "off")
+    print("login screen and lock screen: never uses the fingerprint via PAM "
+          "(see elan-touch-unlock for touch-to-unlock)")
 
 
 def cmd_delete(args):
