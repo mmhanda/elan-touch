@@ -1,7 +1,10 @@
 [Unit]
 Description=elan-touch: unlock the session by touching the fingerprint sensor
-PartOf=graphical-session.target
+# Ordering only, never a requirement: some desktops (Plasma 5.24 on Ubuntu 22.04,
+# for one) never activate graphical-session.target, and a unit wanted only by that
+# target silently never runs. default.target is always reached by systemd --user.
 After=graphical-session.target
+PartOf=graphical-session.target
 
 [Service]
 Environment=PYTHONPATH=/usr/local/lib/elan-touch
@@ -10,4 +13,4 @@ Restart=on-failure
 RestartSec=3
 
 [Install]
-WantedBy=graphical-session.target
+WantedBy=default.target

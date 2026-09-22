@@ -11,6 +11,7 @@ import dbus.mainloop.glib
 from gi.repository import GLib
 
 FPRINT = "net.reactivated.Fprint"
+SCREENSAVER = "org.freedesktop.ScreenSaver"
 log = logging.getLogger("elan-touch-unlock")
 
 
@@ -22,12 +23,26 @@ class Unlocker:
         self.locked = False
         self.session.add_signal_receiver(self.on_lock_changed, "ActiveChanged", "org.freedesktop.ScreenSaver")
         self.system.add_signal_receiver(self.on_status, "VerifyStatus", FPRINT + ".Device")
+        # This service can start before the desktop has claimed the screensaver name, so
+        # watch for it appearing instead of assuming it is already there.
+        self.session.add_signal_receiver(self.on_screensaver_appeared, "NameOwnerChanged",
+                                         "org.freedesktop.DBus", "org.freedesktop.DBus",
+                                         "/org/freedesktop/DBus", arg0=SCREENSAVER)
+        self.query_state()
+
+    def on_screensaver_appeared(self, _name, _old, new):
+        if new:
+            log.info("screen locker appeared - syncing state")
+            self.query_state()
+
+    def query_state(self):
+        """Ask the screen locker whether the session is locked right now."""
         try:
-            saver = dbus.Interface(self.session.get_object("org.freedesktop.ScreenSaver", "/ScreenSaver"),
-                                   "org.freedesktop.ScreenSaver")
+            saver = dbus.Interface(self.session.get_object(SCREENSAVER, "/ScreenSaver"), SCREENSAVER)
             self.on_lock_changed(bool(saver.GetActive()))
+            return True
         except dbus.DBusException:
-            pass
+            return False
 
     def on_lock_changed(self, locked):
         self.locked = bool(locked)
