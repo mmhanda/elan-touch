@@ -118,7 +118,10 @@ class Device(dbus.service.Object):
                                                            "/org/freedesktop/PolicyKit1/Authority"),
                                        "org.freedesktop.PolicyKit1.Authority")
             subject = ("system-bus-name", {"name": dbus.String(sender, variant_level=1)})
-            authority.CheckAuthorization(subject, action, {}, dbus.UInt32(1), "",
+            # flags=0: never let polkit start an interactive authentication. A greeter has no
+            # polkit agent to show a dialog, so asking for one waits for a prompt that can never
+            # appear - that, not the timeout, is what froze the login screen.
+            authority.CheckAuthorization(subject, action, {}, dbus.UInt32(0), "",
                                          reply_handler=lambda r: settle(bool(r[0])),
                                          error_handler=locally,
                                          timeout=self.POLKIT_TIMEOUT)

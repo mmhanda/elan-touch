@@ -205,6 +205,11 @@ def cmd_check(args):
 # screen and locks the user out. Scoped this way the worst case is a slow sudo,
 # which Ctrl-C recovers from while the desktop keeps working.
 PAM_TARGETS = ("/etc/pam.d/sudo", "/etc/pam.d/polkit-1")
+# Opt-in only (`pam on --login`). The greeter is the one place where a fingerprint fault
+# costs access to the machine, so it is never wired up by default. Even then the module
+# goes into the display manager's own file and never into common-auth, which keeps the
+# text consoles (Ctrl+Alt+F3) fingerprint-free as a guaranteed way back in.
+PAM_LOGIN_TARGETS = ("/etc/pam.d/sddm", "/etc/pam.d/gdm-password", "/etc/pam.d/lightdm")
 PAM_BEGIN = "# elan-touch begin (remove with: elan-touch pam off)\n"
 PAM_END = "# elan-touch end\n"
 # success=done ends the auth stack successfully; anything else - including the
@@ -225,8 +230,15 @@ def _pam_strip(text):
     return "".join(out)
 
 
-def pam_enabled():
-    for path in PAM_TARGETS:
+def pam_targets(include_login):
+    targets = list(PAM_TARGETS)
+    if include_login:
+        targets += [p for p in PAM_LOGIN_TARGETS if os.path.exists(p)]
+    return targets
+
+
+def pam_enabled(paths=None):
+    for path in paths or PAM_TARGETS:
         try:
             if PAM_BEGIN in open(path).read():
                 return True
@@ -258,12 +270,15 @@ def cmd_pam(args):
         if os.path.exists(PAM_STALE):
             os.remove(PAM_STALE)
 
-        for path in PAM_TARGETS:
+        # Strip from every file we might ever have written, so turning the login
+        # screen back off actually removes it.
+        for path in pam_targets(True):
             try:
                 text = _pam_strip(open(path).read())
             except OSError:
                 continue
-            if args.state == "on":
+            wanted_here = args.state == "on" and path in pam_targets(args.login)
+            if wanted_here:
                 anchor = "@include common-auth"
                 if anchor not in text:
                     print(f"{path}: no '{anchor}' line, skipped", file=sys.stderr)
@@ -273,10 +288,13 @@ def cmd_pam(args):
                 shutil.copy2(path, path + ".elan-touch.orig")
             _pam_write(path, text)
 
+    login_paths = [p for p in PAM_LOGIN_TARGETS if os.path.exists(p)]
     print("fingerprint for sudo and system password dialogs:",
           "on" if pam_enabled() else "off")
-    print("login screen and lock screen: never uses the fingerprint via PAM "
-          "(see elan-touch-unlock for touch-to-unlock)")
+    print("fingerprint at the login screen:",
+          "on" if pam_enabled(login_paths) else "off (use `pam on --login` to add it)")
+    print("text consoles (Ctrl+Alt+F3) never use the fingerprint - that is the way back in "
+          "if the sensor ever misbehaves")
 
 
 def cmd_delete(args):
@@ -304,6 +322,8 @@ def main():
     p.set_defaults(func=cmd_check)
     p = sub.add_parser("pam", help="use the fingerprint for sudo, polkit and login (Debian/Ubuntu)")
     p.add_argument("state", nargs="?", choices=("on", "off"))
+    p.add_argument("--login", action="store_true",
+                   help="also wire it into the display manager's own PAM file (opt-in)")
     p.set_defaults(func=cmd_pam)
     p = sub.add_parser("delete")
     p.add_argument("--finger")
